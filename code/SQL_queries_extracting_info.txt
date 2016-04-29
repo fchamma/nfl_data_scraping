@@ -1,0 +1,74 @@
+/* Most prolific passers since 1998 */
+SELECT passer, COUNT(passer) AS completed_attempts, sum(yards) AS total_yards
+FROM nfl.passes
+WHERE completed = TRUE
+GROUP BY passer ORDER BY completed_attempts DESC;
+
+/* Most prolific rushers since 1998 */
+SELECT rusher, COUNT(rusher) AS attempts, sum(yards) AS total_yards
+FROM nfl.runs
+  WHERE yards > 0
+GROUP BY rusher ORDER BY total_yards DESC;
+
+/* Average overall yards (runs + passes) by game winner throughout seasons */
+SELECT
+  year,
+  avg(sum_yards) AS avg_yards
+FROM
+  (SELECT
+     date_part('year', game_date) AS year,
+     sum(RHS.yards)               AS sum_yards
+   FROM
+     nfl.schedule AS LHS
+     LEFT JOIN
+     nfl.plays AS RHS
+       ON LHS.game_date = RHS.date AND LHS.winning_team = RHS.attacking
+   GROUP BY LHS.game_id, year) AS self
+GROUP BY year
+ORDER BY year DESC;
+
+/* Ratio of a teams with over 500 yards that lost a game? */
+SELECT
+  CAST((SELECT count(1) FROM
+  (SELECT sum(RHS.yards) as sum_yards FROM
+  nfl.schedule as LHS
+LEFT JOIN
+  nfl.plays AS RHS
+ON LHS.game_date = RHS.date AND LHS.loser_team = RHS.attacking
+group by LHS.game_id) as self
+WHERE sum_yards > 500) AS FLOAT)
+  /
+  (SELECT count(1) FROM
+  (SELECT sum(RHS.yards) as sum_yards FROM
+  nfl.schedule as LHS
+LEFT JOIN
+  nfl.plays AS RHS
+ON LHS.game_date = RHS.date AND LHS.loser_team = RHS.attacking
+group by LHS.game_id) as self2) AS ratio;
+
+/* Yards per week per season */
+SELECT
+  sum(yards),
+  season,
+  week
+FROM nfl.plays
+GROUP BY season, week
+ORDER BY season, week;
+
+/* Success/failure rates by run direction */
+SELECT direction, sum(yards) as total_yards, avg(case
+  WHEN down = 1 AND yards >= togo/2 THEN 1
+  WHEN down = 2 AND yards >= togo*3/4 THEN 1
+  WHEN down = 3 AND yards >= togo THEN 1
+  WHEN down = 4 AND yards >= togo THEN 1
+  ELSE 0
+END) AS success_rate
+from nfl.runs
+GROUP BY direction;
+
+/* yards per play on offense, defense and difference on 2014 season*/
+SELECT attacking as team, off_yards, def_yards, off_yards - def_yards as difference FROM
+(SELECT attacking, sum(yards) as off_yards from nfl.plays where season = '2014' GROUP BY attacking) as LHS
+INNER JOIN
+  (SELECT defending, sum(yards) as def_yards from nfl.plays where season = '2014' GROUP BY defending) as RHS
+ON LHS.attacking = RHS.defending;

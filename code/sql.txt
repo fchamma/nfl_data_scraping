@@ -1,0 +1,124 @@
+create table nfl.schedule (
+    "game_id" bigint,
+    "date" varchar,
+    "time" time,
+    "week" int,
+    venue varchar,
+    "away_score" int,
+    "home_score" int,
+    "away_abv" varchar,
+    "away_team" varchar,
+    "home_abv" varchar,
+    "home_team" varchar,
+    PRIMARY KEY(game_id)
+)
+
+create table nfl.goals (
+    "goal_id" bigint,
+    "date" date,
+    "attacking" varchar,
+    "defending" varchar,
+    quarter int,
+    "time" time,
+    "down" int,
+    "togo" int,
+    "field_location" varchar,
+    "yard_line" int,
+    "attacking_score" int,
+    "defending_score" int,
+    "kicker" varchar,
+    "good" boolean,
+    "yards" int,
+    "epb" numeric,
+    "epa" numeric,
+    PRIMARY KEY(goal_id)
+)
+
+create table nfl.passes (
+    "pass_id" bigint,
+    "date" date,
+    "attacking" varchar,
+    "defending" varchar,
+    quarter int,
+    "time" time,
+    "down" int,
+    "togo" int,
+    "field_location" varchar,
+    "yard_line" int,
+    "attacking_score" int,
+    "defending_score" int,
+    "passer" varchar,
+    "receiver" varchar,
+    "completed" boolean,
+    "yards" int,
+    "epb" numeric,
+    "epa" numeric,
+    PRIMARY KEY(pass_id)
+)
+
+create table nfl.runs (
+    "run_id" bigint,
+    "date" date,
+    "attacking" varchar,
+    "defending" varchar,
+    quarter int,
+    "time" time,
+    "down" int,
+    "togo" int,
+    "field_location" varchar,
+    "yard_line" int,
+    "attacking_score" int,
+    "defending_score" int,
+    "rusher" varchar,
+    "tackler" varchar,
+    "direction" varchar,
+    "yards" int,
+    "epb" numeric,
+    "epa" numeric,
+    PRIMARY KEY(run_id)
+)
+
+COPY nfl.schedule FROM ‘~/Dropbox/nfl/sched.csv' DELIMITER ',' NULL 'NULL' CSV;
+COPY nfl.goals FROM ‘~/Dropbox/nfl/fieldgoals.csv' DELIMITER ',' NULL 'NULL' CSV;
+COPY nfl.runs FROM ‘~/Dropbox/nfl/runs.csv' DELIMITER ',' NULL 'NULL' CSV;
+COPY nfl.passes FROM ‘~/Dropbox/nfl/passes.csv' DELIMITER ',' NULL 'NULL' CSV;
+
+
+UPDATE nfl.schedule SET "date"=to_date("date", 'Day, Month DDTH YYYY');
+ALTER TABLE nfl.schedule
+    ALTER COLUMN "date" TYPE date
+    USING to_date("date", 'Day, Month DDTH YYYY');
+
+
+UPDATE nfl.schedule SET home_team = replace(home_team, 'Oilers', 'Titans')
+UPDATE nfl.schedule SET away_team = replace(away_team, 'Oilers', 'Titans')
+
+CREATE TABLE nfl.passes_new as
+SELECT RHS.game_id, LHS.* FROM
+    (SELECT * FROM nfl.passes) AS LHS
+LEFT JOIN
+    (SELECT * FROM nfl.schedule) AS RHS
+ON LHS."date" = RHS."date" AND ((LHS.attacking = RHS.home_team OR LHS.defending = RHS.home_team) or (LHS.attacking = RHS.home_team OR LHS.defending = RHS.home_team))
+
+CREATE TABLE nfl.runs_new as
+SELECT RHS.game_id, LHS.* FROM
+    (SELECT * FROM nfl.runs) AS LHS
+LEFT JOIN
+    (SELECT game_id, home_team, away_team, "date" FROM nfl.schedule) AS RHS
+ON LHS."date" = RHS."date" AND ((LHS.attacking = RHS.home_team OR LHS.defending = RHS.home_team) or (LHS.attacking = RHS.home_team OR LHS.defending = RHS.home_team))
+
+CREATE TABLE nfl.goals_new as
+SELECT RHS.game_id, LHS.* FROM
+    (SELECT * FROM nfl.goals) AS LHS
+LEFT JOIN
+    (SELECT game_id, home_team, away_team, "date" FROM nfl.schedule) AS RHS
+ON LHS."date" = RHS."date" AND ((LHS.attacking = RHS.home_team OR LHS.defending = RHS.home_team) or (LHS.attacking = RHS.home_team OR LHS.defending = RHS.home_team))
+
+drop table nfl.goals
+drop table nfl.runs
+drop table nfl.passes
+
+alter table nfl.goals_new rename to goals
+alter table nfl.passes_new rename to passes
+alter table nfl.runs_new rename to runs
+

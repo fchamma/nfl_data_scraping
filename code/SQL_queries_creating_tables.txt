@@ -1,0 +1,157 @@
+CREATE SCHEMA nfl;
+create table nfl.schedule ( /* table with season schedules and results since 1998 */
+    "game_id" varchar,
+    "date" varchar,
+    "time" time,
+    "week" int,
+    venue varchar,
+    "away_score" int,
+    "home_score" int,
+    "away_abv" varchar,
+    "away_team" varchar,
+    "home_abv" varchar,
+    "home_team" varchar,
+    PRIMARY KEY(game_id, away_team, home_team)
+);
+
+create table nfl.goals ( /* table with play type = field goal attempts */
+    "goal_id" bigint,
+    "date" date,
+    "attacking" varchar,
+    "defending" varchar,
+    quarter int,
+    "time" time,
+    "down" int,
+    "togo" int,
+    "field_location" varchar,
+    "yard_line" int,
+    "attacking_score" int,
+    "defending_score" int,
+    "kicker" varchar,
+    "good" boolean,
+    "yards" int,
+    "epb" numeric,
+    "epa" numeric,
+    PRIMARY KEY(goal_id)
+);
+
+create table nfl.passes ( /* table with play type = passes */
+    "pass_id" bigint,
+    "date" date,
+    "attacking" varchar,
+    "defending" varchar,
+    quarter int,
+    "time" time,
+    "down" int,
+    "togo" int,
+    "field_location" varchar,
+    "yard_line" int,
+    "attacking_score" int,
+    "defending_score" int,
+    "passer" varchar,
+    "receiver" varchar,
+    "completed" boolean,
+    "yards" int,
+    "epb" numeric,
+    "epa" numeric,
+    PRIMARY KEY(pass_id)
+);
+
+create table nfl.runs ( /* table with play type = runs */
+    "run_id" bigint,
+    "date" date,
+    "attacking" varchar,
+    "defending" varchar,
+    quarter int,
+    "time" time,
+    "down" int,
+    "togo" int,
+    "field_location" varchar,
+    "yard_line" int,
+    "attacking_score" int,
+    "defending_score" int,
+    "rusher" varchar,
+    "tackler" varchar,
+    "direction" varchar,
+    "yards" int,
+    "epb" numeric,
+    "epa" numeric,
+    PRIMARY KEY(run_id)
+);
+
+/* copying data from csv files (python output) */
+COPY nfl.schedule FROM 'C:\Users\felipe.chamma\Documents\USF\Data_Acquisition\project\sched.csv' DELIMITER ',' NULL 'NULL' CSV;
+COPY nfl.goals FROM 'C:\Users\felipe.chamma\Documents\USF\Data_Acquisition\project\fieldgoals.csv' DELIMITER ',' NULL 'NULL' CSV;
+COPY nfl.runs FROM 'C:\Users\felipe.chamma\Documents\USF\Data_Acquisition\project\runs.csv' DELIMITER ',' NULL 'NULL' CSV;
+COPY nfl.passes FROM 'C:\Users\felipe.chamma\Documents\USF\Data_Acquisition\project\passes.csv' DELIMITER ',' NULL 'NULL' CSV;
+
+/* creating a proper date field in the table */
+ALTER TABLE nfl.schedule
+  ADD COLUMN game_date date
+  ADD COLUMN aux VARCHAR;
+UPDATE nfl.schedule
+  SET aux = substring(game_id, 1, 8)
+  SET game_date = to_date(aux, 'YYYYMMDD');
+ALTER TABLE nfl.schedule
+    DROP COLUMN aux;
+
+/* creating field for the season */
+ALTER TABLE nfl.schedule
+    ADD COLUMN season VARCHAR;
+UPDATE nfl.schedule
+  SET season = (CASE
+  WHEN date_part('month', game_date) > 1 THEN  date_part('year', game_date)
+  WHEN date_part('month', game_date) = 1 THEN date_part('year', game_date) - 1
+END);
+
+/* updating TEN moniker after 1999 change */
+UPDATE nfl.schedule SET home_team = replace(home_team, 'Oilers', 'Titans');
+UPDATE nfl.schedule SET away_team = replace(away_team, 'Oilers', 'Titans');
+
+/* creating field with winning and loser teams to facilitate queries */
+ALTER TABLE nfl.schedule
+   ADD COLUMN winning_team varchar;
+UPDATE nfl.schedule
+  SET winning_team = (CASE
+    WHEN home_score > away_score THEN home_team
+    WHEN home_score < away_score THEN away_team
+END);
+ALTER TABLE nfl.schedule
+   ADD COLUMN loser_team varchar;
+UPDATE nfl.schedule
+  SET loser_team = (CASE
+    WHEN home_score > away_score THEN away_team
+    WHEN home_score < away_score THEN home_team
+END);
+
+/* creating table to join pass plays with their game results */
+CREATE TABLE nfl.passes_new as
+SELECT LHS.*, RHS.season, RHS.week, RHS.away_team, RHS.away_score, RHS.home_team, RHS.home_score, RHS.winning_team FROM
+    nfl.passes AS LHS
+LEFT JOIN
+    nfl.schedule AS RHS
+ON LHS."date" = RHS."game_date" AND (LHS.attacking = RHS.home_team OR LHS.attacking = RHS.away_team);
+
+/* creating table to join run plays with their game results */
+CREATE TABLE nfl.runs_new as
+SELECT LHS.*, RHS.season, RHS.week, RHS.away_team, RHS.away_score, RHS.home_team, RHS.home_score, RHS.winning_team FROM
+    nfl.runs AS LHS
+LEFT JOIN
+    nfl.schedule AS RHS
+ON LHS."date" = RHS."game_date" AND (LHS.attacking = RHS.home_team OR LHS.attacking = RHS.away_team);
+
+/* creating table to join run plays with their game results */
+CREATE TABLE nfl.goals_new as
+SELECT LHS.*, RHS.season, RHS.week, RHS.away_team, RHS.away_score, RHS.home_team, RHS.home_score, RHS.winning_team FROM
+    nfl.goals AS LHS
+LEFT JOIN
+    nfl.schedule AS RHS
+ON LHS."date" = RHS."game_date" AND (LHS.attacking = RHS.home_team OR LHS.attacking = RHS.away_team);
+
+/* creating union table to stack passes and runs together */
+CREATE TABLE nfl.plays AS
+  SELECT "date", season, week, attacking, defending, yards, epb, epa, away_team, away_score, home_team, home_score, winning_team
+  FROM nfl.passes_new
+  UNION
+  SELECT "date", season, week, attacking, defending, yards, epb, epa, away_team, away_score, home_team, home_score, winning_team
+  FROM nfl.runs_new;
